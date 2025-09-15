@@ -74,6 +74,140 @@ def is_safe_state(state, row, col):
         if abs(c - col) == abs(r - row):  # cùng đường chéo
             return False
     return True
+# ===================== THUẬT TOÁN IDS =====================
+ids_running = False
+ids_depth_limit = 0
+ids_frontier = []
+
+# Chạy 1 bước của DLS với giới hạn là ids_depth_limit (dùng cho IDS)
+def ids_step_once(offsetX):
+    """Phiên bản DLS dùng trong IDS. Mỗi lần gọi sẽ pop 1 trạng thái, mở rộng nếu chưa đạt giới hạn.
+    Khi frontier rỗng sẽ tăng giới hạn và khởi tạo lại frontier để lặp lại.
+    """
+    global ids_frontier, ids_running, ids_depth_limit
+    if not ids_running:
+        return
+
+    # Nếu frontier rỗng -> tăng giới hạn và khởi tạo lại frontier từ trạng thái bắt đầu
+    if not ids_frontier:
+        ids_depth_limit += 1
+        if ids_depth_limit > 8:
+            print("IDS: Không tìm thấy lời giải trong giới hạn tối đa")
+            ids_running = False
+            return
+        # khởi tạo lại stack với trạng thái bắt đầu
+        ids_frontier = [(start_state, len(start_state))]
+        root.after(300, lambda: ids_step_once(offsetX))
+        return
+
+    # Lấy trạng thái cuối (LIFO)
+    state, depth = ids_frontier.pop()
+
+    # Vẽ trạng thái hiện tại bên phải
+    canvas.delete("queens_right")
+    for (r, c) in state:
+        ve_queen(c, r, offsetX, tag="queens_right")
+
+    # Nếu tìm thấy lời giải
+    if len(state) == 8:
+        print("IDS: Tìm thấy lời giải ở độ sâu", len(state))
+        ids_running = False
+        return
+
+    # Nếu đã đạt giới hạn hiện tại -> không mở rộng
+    if depth >= ids_depth_limit:
+        if ids_running:
+            root.after(300, lambda: ids_step_once(offsetX))
+        return
+    
+    print(f"Độ sâu: {depth} | Đường đi: {state}")
+
+    # Tìm hàng tiếp theo
+    used_rows = {r for (r, _) in state}
+    next_row = next((r for r in range(8) if r not in used_rows), None)
+    if next_row is None:
+        if ids_running:
+            root.after(300, lambda: ids_step_once(offsetX))
+        return
+
+    # Sinh con (duyệt ngược cột để giữ thứ tự giống DFS khi pop
+    for col in range(7, -1, -1):
+        if is_safe_state(state, next_row, col):
+            ids_frontier.append((state + [(next_row, col)], depth + 1))
+
+    if ids_running:
+        root.after(300, lambda: ids_step_once(offsetX))
+
+# Hàm khởi chạy IDS
+def run_ids():
+    global ids_running, ids_frontier, ids_depth_limit
+    if not start_state:
+        print("Chưa có trạng thái bắt đầu. Nhấn Start trước.")
+        return
+    ids_depth_limit = len(start_state)
+    ids_frontier = [(start_state, ids_depth_limit)]
+    ids_running = True
+    ids_step_once(580)
+
+# ===================== THUẬT TOÁN DLS=====================
+dls_running = False
+# dls_frontier là stack các cặp (state, depth)
+dls_frontier = []
+dls_limited = 8
+
+def dls_step(offsetX):
+    """Thực hiện một bước của DLS. Visualize trạng thái hiện tại ở bên phải (offsetX).
+    dls_frontier chứa các tuple (state, depth).
+    """
+    global dls_running, dls_frontier, dls_limited
+    if not dls_running:
+        return
+
+    if not dls_frontier:
+        dls_running = False
+        print("DLS: Không tìm thấy lời giải trong giới hạn độ sâu")
+        return
+
+    # Lấy trạng thái cuối cùng (LIFO)
+    state, depth = dls_frontier.pop()
+
+    
+    print(f"Độ sâu: {depth} | Đường đi: {state}")
+    # Vẽ trạng thái hiện tại bên phải
+    canvas.delete("queens_right")
+    for (r, c) in state:
+        ve_queen(c, r, offsetX, tag="queens_right")
+
+    # Nếu tìm thấy lời giải:
+    if len(state) == 8:
+        print("DLS: Tìm thấy lời giải ở độ sâu", len(state))
+        dls_running = False
+        return
+
+    # Nếu đã đạt giới hạn độ sâu, không mở rộng nữa
+    if depth >= dls_limited:
+        # Chỉ chờ 300ms rồi tiếp tục với trạng thái tiếp theo trong stack
+        if dls_running:
+            root.after(300, lambda: dls_step(offsetX))
+        return
+
+    # Tìm hàng tiếp theo cần đặt hậu (hàng nhỏ nhất chưa dùng)
+    used_rows = {r for (r, _) in state}
+    next_row = next((r for r in range(8) if r not in used_rows), None)
+    if next_row is None:
+        if dls_running:
+            root.after(300, lambda: dls_step(offsetX))
+        return
+
+    # Sinh các trạng thái con: duyệt ngược cột để khi push vào stack rồi pop sẽ xét cột 0 trước
+    for col in range(7, -1, -1):
+        if is_safe_state(state, next_row, col):
+            new_state = state + [(next_row, col)]
+            dls_frontier.append((new_state, depth + 1))
+
+    # Tiếp tục sau 300ms nếu vẫn đang chạy
+    if dls_running:
+        root.after(300, lambda: dls_step(offsetX))
 
 # ===================== THUẬT TOÁN BFS =====================
 running = False
@@ -90,6 +224,8 @@ def bfs_step(offsetX):
 
     state = queue.popleft() # Kiểm tra trạng thái đầu tiên trong queue
 
+    print(f"BFS - Độ sâu: {len(state)} | Đường đi: {state}")
+
     # Vẽ trạng thái hiện tại bên phải
     canvas.delete("queens_right")
     for (r, c) in state: # Vẽ các trạng thái có trong queue hiện tại
@@ -99,7 +235,7 @@ def bfs_step(offsetX):
     if len(state) == 8: # Do có hàm kiểm tra is_safe_step nên đảm bảo không có xung đột
         running = False
         return
-
+    
     # Tìm hàng tiếp theo
     # Lấy hàng nhỏ nhất tiếp theo để đặt hậu
     # --> giảm việc duyệt lung tung
@@ -147,6 +283,8 @@ def ucs_step(offsetX):
 
     cost, state = heapq.heappop(ucs_frontier)
 
+    print(f"UCS - Độ sâu: {len(state)} | Chi phí: {cost} | Đường đi: {state}")
+
     # Vẽ trạng thái hiện tại bên phải
     canvas.delete("queens_right")
     for (r, c) in state:
@@ -188,6 +326,8 @@ def dfs_step(offsetX):
     state = dfs_frontier.pop()
     dfs_explored.append(state)
 
+    print(f"DFS: Đang xét trạng thái (số hậu = {len(state)}): {state}")
+    
     # Vẽ trạng thái hiện tại
     canvas.delete("queens_right")
     for (r, c) in state:
@@ -243,6 +383,13 @@ def start_game():
     ucs_frontier = [(cost_of_state(start_state), start_state)]
     heapq.heapify(ucs_frontier)
 
+def run_ids():
+    global ids_running, ids_frontier, ids_depth_limit
+    ids_depth_limit = len(start_state)
+    ids_frontier =[(start_state, ids_depth_limit)]
+    ids_running = True
+    ids_step_once(580)
+
 def run_bfs():
     global running
     if not queue:
@@ -272,19 +419,43 @@ def run_dfs():
     dfs_running = True
     dfs_step(580)
 
+def run_dls():
+    """Khởi chạy DLS: đặt stack ban đầu và bắt đầu dls_step."""
+    global dls_running, dls_frontier
+    dls_frontier.clear()
+
+    if not start_state:
+        print("Chưa có trạng thái bắt đầu. Nhấn Start trước.")
+        return
+
+    # Độ sâu ban đầu = số hậu trong trạng thái bắt đầu
+    initial_depth = len(start_state)
+    dls_frontier.append((start_state, initial_depth))
+    dls_running = True
+    dls_step(580)
+
 def stop_game():
-    global running, ucs_running
+    global running, ucs_running, dls_running, ids_running
     running = False
     ucs_running = False
+    dls_running = False
+    ids_running = False
 
 def continue_game():
-    global running, ucs_running
+    global running, ucs_running, dls_running, ids_running
     if not running and queue:
         running = True
         bfs_step(580)
     if not ucs_running and ucs_frontier:
         ucs_running = True
         ucs_step(580)
+    if not dls_running and dls_frontier:
+        dls_running = True
+        dls_step(580)
+    if not ids_running and ids_frontier:
+        ids_running = True
+        ids_step_once(580)
+
 
 # ===================== GIAO DIỆN NÚT BẤM =====================
 btn_Start = tk.Button(frame, text="Start (tạo 1 hậu bên trái)", width=25, command=start_game)
@@ -292,6 +463,8 @@ btn_Start.pack(side="left", padx=10)
 
 btn_Run = tk.Button(frame, text="Run BFS", width=15, command=run_bfs)
 btn_Run.pack(side="left", padx=10)
+btn_RunIDS = tk.Button(frame, text="Run IDS", width = 15, command=run_ids)
+btn_RunIDS.pack(side = "left", padx = 10)
 
 btn_RunUCS = tk.Button(frame, text="Run UCS", width=15, command=run_ucs)
 btn_RunUCS.pack(side="left", padx=10)
@@ -299,6 +472,8 @@ btn_RunUCS.pack(side="left", padx=10)
 btn_RunDFS = tk.Button(frame, text="Run DFS", width=15, command=run_dfs)
 btn_RunDFS.pack(side="left", padx=10)
 
+btn_RunDLS = tk.Button(frame, text="Run DLS", width = 15, command=run_dls)
+btn_RunDLS.pack(side="left", padx = 10)
 btn_Stop = tk.Button(frame, text="Stop", width=15, command=stop_game)
 btn_Stop.pack(side="left", padx=10)
 
@@ -321,3 +496,6 @@ ve_banco_daydu(580, side="right")
 
 # ===================== CHẠY GIAO DIỆN =====================
 root.mainloop()
+
+# Không in ra tất cả các lựa chọn, chỉ in ra lựa chọn trong hàng đợi ưu tiên của UCS
+# In ra mảng truy xuất các đường 
