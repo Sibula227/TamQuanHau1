@@ -2,6 +2,7 @@ import tkinter as tk
 from PIL import Image, ImageTk
 import os, random, heapq
 from collections import deque
+import math
 
 # ===================== KHỞI TẠO GIAO DIỆN =====================
 root = tk.Tk()
@@ -360,6 +361,134 @@ def dfs_step(offsetX):
     if dfs_running:
         root.after(300, lambda: dfs_step(offsetX))
 
+# ===================== Hàm heuristic có cost là Khoảng cách Euclid=====================
+def heuristic_euclid(state, w_row = 3, w_col = 2, w_diag = 1):
+    """
+    Hàm heuristic dựa vào khoảng cách Euclid
+    w_row, w_col, w_diag: trọng số cho xung đột
+    """
+    h = 0
+    n = len(state)
+
+    for i in range(n):
+        r1, c1 = state[i]
+        for j in range(i+1, n):
+            r2, c2 = state[j]
+            dist = math.sqrt((r1 - r2)**2 + (c1 - c2)**2)
+
+            # Cùng hàng/cột/đường chéo => cộng chi phí lớn
+            if r1 == r2:
+                h += w_row / (dist + 1e-6)
+            elif c1 == c2:
+                h += w_col / (dist + 1e-6)
+            elif abs(r1 - r2) == abs(c1 - c2):
+                h += w_diag / (dist + 1e-6)
+    return h
+# ===================== Greedy STEP =====================
+greedy_running = False
+greedy_frontier = []
+greedy_path = {}
+
+def greedy_step(offsetX):
+    global greedy_running, greedy_frontier
+    if not greedy_running:
+        return
+    if not greedy_frontier:
+        greedy_running = False
+        return
+    h, state = heapq.heappop(greedy_frontier)
+    
+    canvas.delete("queens_right")
+    for (r,c) in state:
+        ve_queen(c,r,offsetX, tag="queens_right")
+
+    if len(state) == 8 and heuristic_euclid(state) == 0:
+        greedy_running = False
+        print("Greedy đã tìm thấy lời giải")
+        
+        path = []
+        s = tuple(state)
+        while s is not None:
+            path.append(list(s))
+            s = greedy_path.get(s,None)
+        path.reverse()
+        print("Đường đi (Greedy): ")
+        for p in path:
+            print(p)
+        return
+
+    # Sinh trạng thái
+    used_row = {r for (r,_) in state}
+    next_row = next((r for r in range(8) if r not in used_row), None)
+    if next_row is None:
+        root.after(300, lambda: greedy_step(offsetX))
+        return
+    
+    for col in range(8):
+        new_state = state + [(next_row, col)]
+        h_new = heuristic_euclid(new_state)
+        greedy_path[tuple(new_state)] = state
+        heapq.heappush(greedy_frontier, (h_new, new_state))
+
+    if greedy_running:
+        root.after(300, lambda: greedy_step(offsetX))
+# ===================== A* STEP =====================
+astar_running = False
+astar_frontier = []
+astar_parent = {}
+
+
+def astar_step(offsetX):
+    global astar_running, astar_frontier, astar_parent
+    if not astar_running:
+        return
+    if not astar_frontier:
+        astar_running = False
+        return
+    
+    f, g, state = heapq.heappop(astar_frontier)
+
+    canvas.delete("queens_right")
+    for(r,c) in state:
+        ve_queen(c,r,offsetX, tag ="queens_right")
+
+    if len(state) == 8 and cost_of_state(state) == 0:
+        print("Đã tìm thấy lời giải bằng A*!")
+        astar_running = False
+
+        path = []
+        s = tuple(state)
+        while s is not None:
+            path.append(s)
+            s = astar_parent.get(tuple(s),None)
+        
+        path.reverse()
+        print("Đường đi (A*): ")
+        astar_solution_path = path
+        for p in path:
+            print(p)
+        return 
+
+    used_rows = {r for (r,_) in state}
+    next_row = next((r for r in range(8) if r not in used_rows), None)
+    if next_row is None:
+        root.after(500, lambda: astar_step(offsetX))
+        return
+    
+    for col in range(8):
+        new_state = state + [(next_row, col)]
+        g_new = cost_of_state(new_state)
+        h_new = heuristic_euclid(new_state)
+        f_new = g_new + h_new
+
+        astar_parent[tuple(new_state)] = state
+        heapq.heappush(astar_frontier,(f_new, g_new, new_state))
+
+    if astar_running:
+        root.after(300, lambda: astar_step(offsetX))
+
+    
+
 # ===================== HÀM ĐIỀU KHIỂN =====================
 def start_game():
     global start_state, queue, running, ucs_frontier, ucs_running
@@ -382,6 +511,23 @@ def start_game():
     queue = deque([start_state])
     ucs_frontier = [(cost_of_state(start_state), start_state)]
     heapq.heapify(ucs_frontier)
+
+def run_astar():
+    global astar_running, astar_frontier, astar_parent
+    astar_frontier.clear()
+    astar_parent.clear()
+
+    if not start_state:
+        print("Chưa có trạng thái bắt đầu. Nhấn start trước")
+        return
+
+    start_cost = cost_of_state(start_state)
+    start_h = heuristic_euclid(start_state)
+    heapq.heappush(astar_frontier, (start_cost+ start_h, start_cost, start_state))
+    astar_parent[tuple(start_state)] = None
+
+    astar_running = True
+    astar_step(580)
 
 def run_ids():
     global ids_running, ids_frontier, ids_depth_limit
@@ -434,12 +580,27 @@ def run_dls():
     dls_running = True
     dls_step(580)
 
+def run_greedy():
+    global greedy_running, greedy_frontier
+    greedy_frontier.clear()
+
+    if not start_state:
+        print("Chưa có trạng thái ban đầu. Nhấn start trước.")
+        return
+    
+    h_start = heuristic_euclid(start_state)
+    heapq.heappush(greedy_frontier,(h_start, start_state))
+    greedy_running = True
+    print(f"Greedy bắt đầu từ trạng thái: {start_state} | h = {h_start:.3f}")
+    greedy_step(580)
+
 def stop_game():
     global running, ucs_running, dls_running, ids_running
     running = False
     ucs_running = False
     dls_running = False
     ids_running = False
+    greedy_running = False
 
 def continue_game():
     global running, ucs_running, dls_running, ids_running
@@ -455,33 +616,49 @@ def continue_game():
     if not ids_running and ids_frontier:
         ids_running = True
         ids_step_once(580)
-
+    if not greedy_running and greedy_frontier:
+        greedy_running = True
+        greedy_step(580)
+    if not astar_running and astar_frontier:
+        astar_running = True
+        astar_step(580)
 
 # ===================== GIAO DIỆN NÚT BẤM =====================
+# Dòng 1: Start, BFS, UCS, DFS, Greedy
 btn_Start = tk.Button(frame, text="Start (tạo 1 hậu bên trái)", width=25, command=start_game)
-btn_Start.pack(side="left", padx=10)
+btn_Start.grid(row=0, column=0, padx=10, pady=5)
 
-btn_Run = tk.Button(frame, text="Run BFS", width=15, command=run_bfs)
-btn_Run.pack(side="left", padx=10)
-btn_RunIDS = tk.Button(frame, text="Run IDS", width = 15, command=run_ids)
-btn_RunIDS.pack(side = "left", padx = 10)
+btn_RunBFS = tk.Button(frame, text="Run BFS", width=15, command=run_bfs)
+btn_RunBFS.grid(row=0, column=1, padx=10, pady=5)
 
 btn_RunUCS = tk.Button(frame, text="Run UCS", width=15, command=run_ucs)
-btn_RunUCS.pack(side="left", padx=10)
+btn_RunUCS.grid(row=0, column=2, padx=10, pady=5)
 
 btn_RunDFS = tk.Button(frame, text="Run DFS", width=15, command=run_dfs)
-btn_RunDFS.pack(side="left", padx=10)
+btn_RunDFS.grid(row=0, column=3, padx=10, pady=5)
 
-btn_RunDLS = tk.Button(frame, text="Run DLS", width = 15, command=run_dls)
-btn_RunDLS.pack(side="left", padx = 10)
+btn_RunGreedy = tk.Button(frame, text="Run Greedy", width=15, command=run_greedy)
+btn_RunGreedy.grid(row=0, column=4, padx=10, pady=5)
+
+btn_RunDLS = tk.Button(frame, text="Run DLS", width=15, command=run_dls)
+btn_RunDLS.grid(row=0, column=5, padx=10, pady=5)
+
+btn_RunIDS = tk.Button(frame, text="Run IDS", width=15, command=run_ids)
+btn_RunIDS.grid(row=0, column=6, padx=10, pady=5)
+
+btn_RunAstar = tk.Button(frame, text = "Run A*", width = 15, command=run_astar)
+btn_RunAstar.grid(row=0, column=7, padx=10,pady=5)
+
+# Dòng 2: Stop, Continue, Reset
 btn_Stop = tk.Button(frame, text="Stop", width=15, command=stop_game)
-btn_Stop.pack(side="left", padx=10)
+btn_Stop.grid(row=1, column=0, padx=10, pady=5)
 
 btn_Continue = tk.Button(frame, text="Continue", width=15, command=continue_game)
-btn_Continue.pack(side="left", padx=10)
+btn_Continue.grid(row=1, column=1, padx=10, pady=5)
 
 btn_Reset = tk.Button(frame, text="Reset (Xóa hậu)", width=15, command=clear_queens)
-btn_Reset.pack(side="right", padx=20)
+btn_Reset.grid(row=1, column=2, padx=10, pady=5)
+
 
 # ===================== LABELS =====================
 lbl_left = tk.Label(root, text="Trạng thái bắt đầu", font=("Arial", 12))
