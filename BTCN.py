@@ -487,7 +487,56 @@ def astar_step(offsetX):
     if astar_running:
         root.after(300, lambda: astar_step(offsetX))
 
-    
+# ===================== Simulated Annealing STEP =====================
+
+
+sa_running = False
+sa_state = []
+sa_temperature = 1.0
+sa_cooling_rate = 0.99
+
+
+def sa_step(offsetX):
+    global sa_state, sa_temperature, sa_running
+    if not sa_running:
+        return
+
+
+    if sa_temperature < 0.001:
+        print("SA dừng do nhiệt độ quá thấp!")
+        sa_running = False
+        return
+
+# Vẽ trạng thái hiện tại
+    canvas.delete("queens_right")
+    for (r, c) in sa_state:
+        ve_queen(c, r, offsetX, tag="queens_right")
+
+    current_cost = cost_of_state(sa_state)
+    if current_cost == 0:
+        print("SA đã tìm thấy lời giải!")
+        sa_running = False
+        return
+
+    # Chọn ngẫu nhiên 1 hàng để thay đổi
+    neighbor = sa_state.copy()
+    row_to_change = random.randint(0, len(neighbor)-1)
+    current_col = neighbor[row_to_change][1]
+
+    # Chọn cột mới khác cột cũ
+    new_col = random.choice([c for c in range(8) if c != current_col])
+    neighbor[row_to_change] = (neighbor[row_to_change][0], new_col)
+    neighbor_cost = cost_of_state(neighbor)
+    delta = neighbor_cost - current_cost
+
+    # Quyết định có chấp nhận trạng thái láng giềng hay không
+    if delta < 0 or random.random() < math.exp(-delta / sa_temperature):
+        sa_state = neighbor
+
+    sa_temperature *= sa_cooling_rate
+
+    if sa_running:
+        root.after(100, lambda: sa_step(offsetX))
 
 # ===================== HÀM ĐIỀU KHIỂN =====================
 def start_game():
@@ -594,6 +643,20 @@ def run_greedy():
     print(f"Greedy bắt đầu từ trạng thái: {start_state} | h = {h_start:.3f}")
     greedy_step(580)
 
+def run_sa(offsetX=580):
+    global sa_state, sa_running, sa_temperature
+    clear_queens()
+    ve_banco_daydu(40, side="left")
+    ve_banco_daydu(offsetX, side="right")
+
+    # Khởi tạo: mỗi hàng một con hậu, cột ngẫu nhiên
+    sa_state = [(r, random.randint(0, 7)) for r in range(8)]
+    sa_temperature = 8.0
+    sa_running = True
+    print(f"SA bắt đầu với cost = {cost_of_state(sa_state)}")
+    sa_step(580)
+
+
 def stop_game():
     global running, ucs_running, dls_running, ids_running
     running = False
@@ -648,6 +711,9 @@ btn_RunIDS.grid(row=0, column=6, padx=10, pady=5)
 
 btn_RunAstar = tk.Button(frame, text = "Run A*", width = 15, command=run_astar)
 btn_RunAstar.grid(row=0, column=7, padx=10,pady=5)
+
+btn_RunSA = tk.Button(frame, text ="Run SA", width = 15, command=run_sa)
+btn_RunSA.grid(row=0, column=8, padx =10, pady=5)
 
 # Dòng 2: Stop, Continue, Reset
 btn_Stop = tk.Button(frame, text="Stop", width=15, command=stop_game)
