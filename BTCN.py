@@ -10,10 +10,10 @@ root.title("8 Queen problem")
 root.geometry("1300x800")
 
 canvas = tk.Canvas(root, width=1200, height=650)
-canvas.pack(pady=70)
+canvas.pack(pady=0)
 
 frame = tk.Frame(root)
-frame.place(x=0, y=650)
+frame.place(x=0, y=600)
 
 size = 60
 
@@ -54,8 +54,8 @@ def ve_banco_daydu(offsetX, side="left"):
 
 def ve_queen(x, y, offsetX, tag=None):
     """Vẽ một quân hậu tại (x,y)"""
-    cx = offsetX + x*size + size//2
-    cy = y*size + size//2
+    cx = offsetX + x*size + size // 2
+    cy = y*size + size // 2
     if tag:
         canvas.create_image(cx, cy, image=queen_img_tk, tags=tag)
     else:
@@ -487,13 +487,16 @@ def astar_step(offsetX):
     if astar_running:
         root.after(300, lambda: astar_step(offsetX))
 
+def heuristic_SA(w_diag = 1, w_col = 2, w_row = 3):
+    pass
+
 # ===================== Simulated Annealing STEP =====================
 
 
 sa_running = False
 sa_state = []
-sa_temperature = 1.0
-sa_cooling_rate = 0.99
+sa_temperature = 4.0
+sa_cooling_rate = 0.95
 
 
 def sa_step(offsetX):
@@ -526,17 +529,141 @@ def sa_step(offsetX):
     # Chọn cột mới khác cột cũ
     new_col = random.choice([c for c in range(8) if c != current_col])
     neighbor[row_to_change] = (neighbor[row_to_change][0], new_col)
+
     neighbor_cost = cost_of_state(neighbor)
+
     delta = neighbor_cost - current_cost
 
     # Quyết định có chấp nhận trạng thái láng giềng hay không
+
     if delta < 0 or random.random() < math.exp(-delta / sa_temperature):
         sa_state = neighbor
 
     sa_temperature *= sa_cooling_rate
 
     if sa_running:
-        root.after(100, lambda: sa_step(offsetX))
+        root.after(500, lambda: sa_step(offsetX))
+
+# ===================== Beam Search =====================
+beam_running = False
+beam_frontier = []
+beam_width = 5
+
+def beam_step(offsetX):
+    global beam_running, beam_frontier
+    if not beam_running:
+        return
+
+    if not beam_frontier:
+        print("Beam Search: Không tìm thấy lời giải")
+        beam_running = False
+        return
+
+    # Lấy tất cả trạng thái ở mức hiện tại
+    current_level = beam_frontier
+
+    # Sinh tất cả con từ mỗi trạng thái trong current level
+    children = []
+    for cost, state in current_level:
+        # Nếu là nghiệm thì dừng ngay
+        if len(state) == 8 and cost_of_state(state) == 0:
+            print("Beam Search: Tìm thấy lời giải")
+            beam_running = False
+            # Vẽ nghiệm
+            canvas.delete("queens_right")
+            for (r, c) in state:
+                ve_queen(c, r, offsetX, tag="queens_right")
+            return
+
+        used_row = {r for (r, _) in state}
+        next_row = next((r for r in range(8) if r not in used_row), None)
+        if next_row is None:
+            continue
+
+        for col in range(8):
+            new_state = state + [(next_row, col)]
+            new_cost = cost_of_state(new_state)
+            children.append((new_cost, new_state))
+
+    if not children:
+        print("Beam Search: Không có trạng thái con để mở rộng")
+        beam_running = False
+        return
+
+    # Chọn beam_width trạng thái tốt nhất làm frontier mới
+    children.sort(key=lambda x: x[0])
+    beam_frontier = children[:beam_width]
+
+    # Vẽ trạng thái tốt nhất (nhỏ nhất) trong frontier mới
+    best_state = beam_frontier[0][1]
+    canvas.delete("queens_right")
+    for (r, c) in best_state:
+        ve_queen(c, r, offsetX, tag="queens_right")
+
+    # Nếu đã tìm thấy nghiệm ở best_state thì dừng
+    if len(best_state) == 8 and cost_of_state(best_state) == 0:
+        print("Beam Search: Tìm thấy lời giải")
+        beam_running = False
+        return
+
+    # Tiếp tục sau 300ms nếu vẫn chạy
+    if beam_running:
+        root.after(300, lambda: beam_step(offsetX))
+
+# ===================== Hill Climbing =====================
+hc_running = False
+hc_state = []
+
+def hc_step(offsetX):
+    global hc_running, hc_state
+    if not hc_running:
+        return
+
+    # Vẽ trạng thái hiện tại
+    canvas.delete("queens_right")
+    for (r, c) in hc_state:
+        ve_queen(c, r, offsetX, tag="queens_right")
+
+    current_cost = cost_of_state(hc_state)
+    print(f"Hill Climbing: cost hiện tại = {current_cost} | state = {hc_state}")
+
+    if current_cost == 0:
+        print("Hill Climbing tìm thấy lời giải!")
+        hc_running = False
+        return
+
+    # Sinh tất cả neighbor: thay cột từng con hậu trên từng hàng
+    neighbors = []  # chứa (cost, state)
+    for i in range(len(hc_state)):
+        row_idx = hc_state[i][0]
+        for col in range(8):
+            if col == hc_state[i][1]:
+                continue
+            neighbor = hc_state.copy()
+            # thay cột của hàng i
+            neighbor[i] = (row_idx, col)
+            neighbors.append((cost_of_state(neighbor), neighbor))
+
+    if not neighbors:
+        print("Hill Climbing: Không có neighbor nào")
+        hc_running = False
+        return
+
+    # Chọn neighbor tốt nhất (cost nhỏ nhất)
+    neighbors.sort(key=lambda x: x[0])
+    best_cost, best_state = neighbors[0]
+
+    # Nếu best không tốt hơn current -> local minimum
+    if best_cost >= current_cost:
+        print("Hill Climbing đã đạt local minimum (không cải tiến được).")
+        hc_running = False
+        return
+
+    # Cập nhật trạng thái và tiếp tục
+    hc_state = best_state
+
+    if hc_running:
+        root.after(300, lambda: hc_step(offsetX))
 
 # ===================== HÀM ĐIỀU KHIỂN =====================
 def start_game():
@@ -656,6 +783,35 @@ def run_sa(offsetX=580):
     print(f"SA bắt đầu với cost = {cost_of_state(sa_state)}")
     sa_step(580)
 
+def run_beam():
+    global beam_running, beam_frontier
+    if not start_state:
+        print("Chưa có trạng thái băt đầu. Nhấn start trước")
+        return
+    beam_frontier = [(cost_of_state(start_state), start_state)]
+    beam_running = True
+    print(f"Beam Search bắt đầu với beam_width = {beam_width} | start = {start_state}")
+    beam_step(580)
+
+def run_hc():
+    global hc_running, hc_state
+    if not start_state:
+        print("Chưa có trạng thái bắt đầu!")
+        return
+
+    # Nếu start_state chưa đủ 8 hậu, bổ sung random cho các hàng còn thiếu
+    hc_state = start_state.copy()
+    used_rows = {r for (r, _) in hc_state}
+    for r in range(8):
+        if r not in used_rows:
+            hc_state.append((r, random.randint(0, 7)))
+
+    # Sắp xếp hc_state theo hàng (không bắt buộc nhưng dễ quản lý)
+    hc_state.sort(key=lambda x: x[0])
+
+    print("Hill Climbing bắt đầu với state:", hc_state, "cost =", cost_of_state(hc_state))
+    hc_running = True
+    hc_step(580)
 
 def stop_game():
     global running, ucs_running, dls_running, ids_running
@@ -664,6 +820,9 @@ def stop_game():
     dls_running = False
     ids_running = False
     greedy_running = False
+    sa_running = False
+    beam_running = False
+    hc_state = False
 
 def continue_game():
     global running, ucs_running, dls_running, ids_running
@@ -685,53 +844,94 @@ def continue_game():
     if not astar_running and astar_frontier:
         astar_running = True
         astar_step(580)
+    if not sa_running:
+        sa_running = True
+        sa_step(580)
+    if not beam_running and beam_frontier:
+        beam_running = True
+        beam_step(580)
+    if not hc_running:
+        hc_running = True
+        hc_step(580)
 
 # ===================== GIAO DIỆN NÚT BẤM =====================
-# Dòng 1: Start, BFS, UCS, DFS, Greedy
-btn_Start = tk.Button(frame, text="Start (tạo 1 hậu bên trái)", width=25, command=start_game)
-btn_Start.grid(row=0, column=0, padx=10, pady=5)
+# ===== Frame chứa thuật toán (trái) =====
+algo_frame = tk.Frame(frame)
+algo_frame.grid(row=0, column=0, padx=10, pady=5, sticky="nw")  # trái trên cùng
 
-btn_RunBFS = tk.Button(frame, text="Run BFS", width=15, command=run_bfs)
-btn_RunBFS.grid(row=0, column=1, padx=10, pady=5)
+# ===== Nhóm 1: BFS, DFS, IDS, DLS =====
+listbox1 = tk.Listbox(algo_frame, height=6, width=20)
+listbox1.grid(row=0, column=0, padx=10, pady=5)
+algos_group1 = [
+    ("Run BFS", run_bfs),
+    ("Run DFS", run_dfs),
+    ("Run IDS", run_ids),
+    ("Run DLS", run_dls)
+]
+for text, _ in algos_group1:
+    listbox1.insert(tk.END, text)
 
-btn_RunUCS = tk.Button(frame, text="Run UCS", width=15, command=run_ucs)
-btn_RunUCS.grid(row=0, column=2, padx=10, pady=5)
+# ===== Nhóm 2: UCS, Greedy, A* =====
+listbox2 = tk.Listbox(algo_frame, height=6, width=20)
+listbox2.grid(row=0, column=1, padx=10, pady=5)
+algos_group2 = [
+    ("Run UCS", run_ucs),
+    ("Run Greedy", run_greedy),
+    ("Run A*", run_astar)
+]
+for text, _ in algos_group2:
+    listbox2.insert(tk.END, text)
 
-btn_RunDFS = tk.Button(frame, text="Run DFS", width=15, command=run_dfs)
-btn_RunDFS.grid(row=0, column=3, padx=10, pady=5)
+# ===== Nhóm 3: SA + Beam Search =====
+listbox3 = tk.Listbox(algo_frame, height=6, width=20)
+listbox3.grid(row=0, column=2, padx=10, pady=5)
+algos_group3 = [
+    ("Run SA", run_sa),
+    ("Run Beam Search", run_beam), 
+    ("Run Hill Climbing", run_hc)
+]
+for text, _ in algos_group3:
+    listbox3.insert(tk.END, text)
 
-btn_RunGreedy = tk.Button(frame, text="Run Greedy", width=15, command=run_greedy)
-btn_RunGreedy.grid(row=0, column=4, padx=10, pady=5)
+# Hàm xử lý double click
+def on_listbox_select(event, actions):
+    selection = event.widget.curselection()
+    if selection:
+        index = selection[0]
+        _, func = actions[index]
+        func()
 
-btn_RunDLS = tk.Button(frame, text="Run DLS", width=15, command=run_dls)
-btn_RunDLS.grid(row=0, column=5, padx=10, pady=5)
+listbox1.bind("<Double-Button-1>", lambda e: on_listbox_select(e, algos_group1))
+listbox2.bind("<Double-Button-1>", lambda e: on_listbox_select(e, algos_group2))
+listbox3.bind("<Double-Button-1>", lambda e: on_listbox_select(e, algos_group3))
 
-btn_RunIDS = tk.Button(frame, text="Run IDS", width=15, command=run_ids)
-btn_RunIDS.grid(row=0, column=6, padx=10, pady=5)
+# Label hướng dẫn
+lbl_hint = tk.Label(algo_frame, text="Nhấp đúp để chạy thuật toán", font=("Arial", 10), fg="gray")
+lbl_hint.grid(row=1, column=0, columnspan=3, pady=5)
 
-btn_RunAstar = tk.Button(frame, text = "Run A*", width = 15, command=run_astar)
-btn_RunAstar.grid(row=0, column=7, padx=10,pady=5)
+# ===== Frame chứa 4 nút cố định (phải) =====
+control_frame = tk.Frame(frame)
+control_frame.grid(row=0, column=1, padx=650, pady=(0, 1000), sticky="n")  
 
-btn_RunSA = tk.Button(frame, text ="Run SA", width = 15, command=run_sa)
-btn_RunSA.grid(row=0, column=8, padx =10, pady=5)
+btn_Start = tk.Button(control_frame, text="Start", width=15, command=start_game)
+btn_Start.pack(pady=5)
 
-# Dòng 2: Stop, Continue, Reset
-btn_Stop = tk.Button(frame, text="Stop", width=15, command=stop_game)
-btn_Stop.grid(row=1, column=0, padx=10, pady=5)
+btn_Stop = tk.Button(control_frame, text="Stop", width=15, command=stop_game)
+btn_Stop.pack(pady=5)
 
-btn_Continue = tk.Button(frame, text="Continue", width=15, command=continue_game)
-btn_Continue.grid(row=1, column=1, padx=10, pady=5)
+btn_Continue = tk.Button(control_frame, text="Continue", width=15, command=continue_game)
+btn_Continue.pack(pady=5)
 
-btn_Reset = tk.Button(frame, text="Reset (Xóa hậu)", width=15, command=clear_queens)
-btn_Reset.grid(row=1, column=2, padx=10, pady=5)
+btn_Reset = tk.Button(control_frame, text="Reset", width=15, command=clear_queens)
+btn_Reset.pack(pady=5)
 
 
 # ===================== LABELS =====================
 lbl_left = tk.Label(root, text="Trạng thái bắt đầu", font=("Arial", 12))
-lbl_left.place(x=200, y=570)
+lbl_left.place(x=250, y=500)
 
 lbl_right = tk.Label(root, text="Trạng thái mục tiêu", font=("Arial", 12))
-lbl_right.place(x=700, y=570)
+lbl_right.place(x=750, y=500)
 
 # Khởi tạo bàn cờ ban đầu
 ve_banco_daydu(40, side="left")
@@ -740,5 +940,4 @@ ve_banco_daydu(580, side="right")
 # ===================== CHẠY GIAO DIỆN =====================
 root.mainloop()
 
-# Không in ra tất cả các lựa chọn, chỉ in ra lựa chọn trong hàng đợi ưu tiên của UCS
-# In ra mảng truy xuất các đường 
+
