@@ -664,6 +664,73 @@ def hc_step(offsetX):
 
     if hc_running:
         root.after(300, lambda: hc_step(offsetX))
+# ===================== Genetic Algorithm STEP =====================
+ga_running = False
+ga_population = []
+ga_generation = 0
+POP_SIZE = 30
+MUTATION_RATE = 0.2
+
+def fitness(state):
+    # Giá trị càng nhỏ càng tốt, nên đảo lại
+    h = heuristic_euclid(state)
+    return 1 / (1 + h)  # chuyển thành fitness để maximize
+
+
+def crossover(parent1, parent2):
+    """Tạo con bằng cách lai chéo"""
+    point = random.randint(1,len(parent1)-2)
+    child = parent1[:point] + parent2[point:]
+    return child
+
+def mutate(state):
+    """Đột biến: đổi cột ngẫu nhiên của 1 con hậu"""
+    if random.random() < MUTATION_RATE:
+        idx = random.randint(0,len(state)-1)
+        col_new = random.randint(0,7)
+        state[idx] = (state[idx][0], col_new)
+    return state
+
+def ga_step(offsetX):
+    global ga_population, ga_generation, ga_running
+    if not ga_running:
+        return
+
+    ga_generation += 1
+
+    # Đánh giá fitness
+    scored_pop = [(fitness(ind), ind) for ind in ga_population]
+    scored_pop.sort(reverse=True, key=lambda x: x[0])
+
+    best_fit, best_state = scored_pop[0]
+
+    # Xóa toàn bộ quân cũ trước khi vẽ
+    canvas.delete("queens_right")
+    for (r, c) in best_state[:8]:  # chỉ vẽ đúng 8 hậu
+        ve_queen(c, r, offsetX, tag="queens_right")
+
+    print(f"GA - Thế hệ {ga_generation}, fitness tốt nhất: {best_fit}")
+
+    if cost_of_state(best_state) == 0:
+        print("GA đã tìm thấy lời giải tối ưu!")
+        ga_running = False
+        return
+
+    # Chọn lọc: lấy top 50% tốt nhất để lai
+    parents = [ind for _, ind in scored_pop[:POP_SIZE // 2]]
+
+    new_population = []
+    while len(new_population) < POP_SIZE:
+        p1, p2 = random.sample(parents, 2)
+        child = crossover(p1.copy(), p2.copy())
+        child = mutate(child)
+        child.sort(key=lambda x: x[0])  # đảm bảo sắp xếp theo hàng
+        new_population.append(child)
+
+    ga_population = new_population
+
+    if ga_running:
+        root.after(200, lambda: ga_step(offsetX))
 
 # ===================== HÀM ĐIỀU KHIỂN =====================
 def start_game():
@@ -687,6 +754,7 @@ def start_game():
     queue = deque([start_state])
     ucs_frontier = [(cost_of_state(start_state), start_state)]
     heapq.heapify(ucs_frontier)
+
 
 def run_astar():
     global astar_running, astar_frontier, astar_parent
@@ -813,19 +881,49 @@ def run_hc():
     hc_running = True
     hc_step(580)
 
+def run_ga():
+    global ga_population, ga_running, ga_generation
+
+    if not start_state:
+        print("Chưa có trạng thái bắt đầu! Nhấn start")
+        return
+
+    ga_population = []
+    used_rows = {r for (r, _) in start_state}
+
+    for _ in range(POP_SIZE):
+        # Dùng list mới hoàn toàn cho mỗi cá thể
+        state = list(start_state)  # copy an toàn, tránh tham chiếu chung
+        for r in range(8):
+            if r not in used_rows:
+                state.append((r, random.randint(0, 7)))
+        # Đảm bảo state luôn có đúng 8 hậu và không trùng hàng
+        state.sort(key=lambda x: x[0])
+        ga_population.append(state.copy())
+
+    ga_generation = 0
+    ga_running = True
+    print("GA bắt đầu với quần thể kích thước:", POP_SIZE)
+    ga_step(580)
+
 def stop_game():
-    global running, ucs_running, dls_running, ids_running
+    global running, ucs_running, dfs_running, greedy_running
+    global sa_running, beam_running, hc_running, ga_running
+
     running = False
     ucs_running = False
-    dls_running = False
-    ids_running = False
+    dfs_running = False
     greedy_running = False
     sa_running = False
     beam_running = False
-    hc_state = False
+    hc_running = False
+    ga_running = False
 
+    
 def continue_game():
     global running, ucs_running, dls_running, ids_running
+    global hc_running, sa_running, greedy_running, astar_running
+    global ga_running
     if not running and queue:
         running = True
         bfs_step(580)
@@ -853,6 +951,9 @@ def continue_game():
     if not hc_running:
         hc_running = True
         hc_step(580)
+    if not ga_running:
+        ga_running = True
+        ga_step(580)
 
 # ===================== GIAO DIỆN NÚT BẤM =====================
 # ===== Frame chứa thuật toán (trái) =====
@@ -888,7 +989,8 @@ listbox3.grid(row=0, column=2, padx=10, pady=5)
 algos_group3 = [
     ("Run SA", run_sa),
     ("Run Beam Search", run_beam), 
-    ("Run Hill Climbing", run_hc)
+    ("Run Hill Climbing", run_hc),
+    ("Run Genetic Algorithm", run_ga)
 ]
 for text, _ in algos_group3:
     listbox3.insert(tk.END, text)
