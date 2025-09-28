@@ -734,56 +734,105 @@ def ga_step(offsetX):
 
 
 # ===================== AND - OR SEARCH =====================
+
 andor_running = False
-andor_queue = deque()
+andor_stack = []
 
 def expand_andor(state):
-    """Sinh các trạng thái con từ state
-    (OR-node)"""
-    used_rows = {r for (r,_) in state}
+    """Sinh các trạng thái con cho AND-OR search"""
+    children = []
+    used_rows = {r for (r, _) in state}
     next_row = next((r for r in range(8) if r not in used_rows), None)
     if next_row is None:
         return []
-    
-    children = []
     for col in range(8):
         if is_safe_state(state, next_row, col):
             children.append(state + [(next_row, col)])
     return children
 
 def andor_step(offsetX):
-    global andor_running, andor_queue
+    global andor_running, andor_stack
     if not andor_running:
         return
-    if not andor_queue:
-        print("AND-OR: Hết trạng thái, không tìm ra lời giải")
+    if not andor_stack:
+        print("AND-OR Search: Hết trạng thái, không tìm thấy lời giải.")
         andor_running = False
         return
 
-    node_type, state = andor_queue.popleft()
+    state = andor_stack.pop() 
 
+    # Vẽ trạng thái hiện tại
     canvas.delete("queens_right")
     for (r, c) in state:
-        ve_queen(c, r, offsetX, tag ="queens_right")
-    
-    print(f"Đang xét: {node_type}-node | state = {state}")
+        ve_queen(c, r, offsetX, tag="queens_right")
 
-    if len(state) == 8:
-        print("AND-OR: Tìm thấy lời giải! ", state)
+    print(f"AND-OR Search: đang xét state = {state}")
+
+    if len(state) == 8 and cost_of_state(state) == 0:
+        print("AND-OR Search:  Tìm thấy lời giải!")
         andor_running = False
         return
-    
-    children = expand_andor(state)
-    print(f"Sinh được {len(children)} trạng thái con")
 
-    if node_type == "OR":
-        for child in children:
-            andor_queue.append(("AND", child))
-    elif node_type == "AND":
-        for child in children:
-            andor_queue.append(("OR", child))
+    # Sinh các trạng thái con
+    children = expand_andor(state)
+
+    # Thêm vào stack (LIFO) => duyệt chiều sâu trước
+    for child in reversed(children):
+        andor_stack.append(child)
+
     if andor_running:
-        root.after(200, lambda: andor_step(offsetX))
+        root.after(300, lambda: andor_step(offsetX))
+
+# =============== Belief Search ===============
+def expand_belief_state(belief):
+    """Sinh belief state mới: mở rộng mỗi state trong belief bằng cách đặt hậu vào hàng tiếp theo"""
+    next_belief = []
+    for state in belief:
+        used_rows = {r for (r, _) in state}
+        next_row = next((r for r in range(8) if r not in used_rows), None)
+        if next_row is None:
+            continue
+
+        for col in range(8):
+            new_state = state + [(next_row, col)]
+            next_belief.append(new_state)  
+    return next_belief
+
+def belief_step(offsetX):
+    global belief_running, belief_frontier
+    if not belief_running:
+        return
+    if not belief_frontier:
+        print("Belief Search: Không còn belief state nào, dừng!")
+        belief_running = False
+        return
+
+    current_belief = belief_frontier.pop(0)
+    print(f"Belief Search: Đang xét belief có {len(current_belief)} trạng thái.")
+    
+    # Vẽ 1 trạng thái đại diện
+    if current_belief:
+        rep_state = current_belief[0]
+        canvas.delete("queens_right")
+        for (r, c) in rep_state:
+            ve_queen(c, r, offsetX, tag="queens_right")
+
+    # Kiểm tra nếu tất cả trạng thái trong belief đều là nghiệm
+    if current_belief and all(len(state) == 8 and cost_of_state(state) == 0 for state in current_belief):
+        print("Belief Search: Toàn bộ belief state là nghiệm hợp lệ!")
+        belief_running = False
+        return
+
+    next_belief = expand_belief_state(current_belief)
+
+    if next_belief:
+        next_belief.sort(key=lambda s: cost_of_state(s))
+        next_belief = next_belief[:10]  # Giữ top 10 trạng thái tốt nhất
+        belief_frontier.append(next_belief)
+
+    if belief_running:
+        root.after(300, lambda: belief_step(offsetX))
+
 
 # ===================== HÀM ĐIỀU KHIỂN =====================
 def start_game():
@@ -807,7 +856,6 @@ def start_game():
     queue = deque([start_state])
     ucs_frontier = [(cost_of_state(start_state), start_state)]
     heapq.heapify(ucs_frontier)
-
 
 def run_astar():
     global astar_running, astar_frontier, astar_parent
@@ -891,7 +939,7 @@ def run_greedy():
     print(f"Greedy bắt đầu từ trạng thái: {start_state} | h = {h_start:.3f}")
     greedy_step(580)
 
-def run_sa(offsetX=580):
+def run_sa(offsetX = 580):
     global sa_state, sa_running, sa_temperature
     clear_queens()
     ve_banco_daydu(40, side="left")
@@ -960,20 +1008,31 @@ def run_ga():
     ga_step(580)
 
 def run_andor():
-    global andor_running, andor_queue
+    global andor_running, andor_stack
     if not start_state:
-        print("Chưa có trạng thái bắt đầu, nhân start")
+        print("Chưa có trạng thái bắt đầu! Nhấn Start trước.")
         return
-    andor_queue.clear()
-    andor_queue.append(("OR", start_state))
+    andor_stack.clear()
+    andor_stack.append(start_state)
     andor_running = True
-    print("AND-OR Search bắt đầu ", start_state)
+    print("AND-OR Search bắt đầu với trạng thái:", start_state)
     andor_step(580)
+
+def run_belief():
+    global belief_running, belief_frontier
+    if not start_state:
+        print("Chưa có trạng thái ban đầu, nhấn start trước")
+        return
+    
+    belief_frontier = [[start_state]]
+    belief_running = True
+    print("Belief Search bắt đầu với 1 belief state")
+    belief_step(580)
 
 def stop_game():
     global running, ucs_running, dfs_running, greedy_running
     global sa_running, beam_running, hc_running, ga_running
-    global andor_running
+    global andor_running, belief_running
 
     running = False
     ucs_running = False
@@ -984,11 +1043,12 @@ def stop_game():
     hc_running = False
     ga_running = False
     andor_running = False
-    
+    belief_running = False
+
 def continue_game():
     global running, ucs_running, dls_running, ids_running
     global hc_running, sa_running, greedy_running, astar_running
-    global ga_running, andor_running
+    global ga_running, andor_running, belief_running
     if not running and queue:
         running = True
         bfs_step(580)
@@ -1022,6 +1082,9 @@ def continue_game():
     if not andor_running:
         andor_running = True
         andor_step(580)
+    if not belief_running:
+        belief_running = True
+        belief_step(580)
 
 # ===================== GIAO DIỆN NÚT BẤM =====================
 # ===== Frame chứa thuật toán (trái) =====
@@ -1068,7 +1131,8 @@ listbox4 = tk.Listbox(algo_frame, height=6, width=20)
 listbox4.grid(row=0, column=3, padx=10, pady=5)
 
 algos_group4 = [
-    ("Run AND-OR search", run_andor)
+    ("Run AND-OR search", run_andor),
+    ("Run Belief Search", run_belief)
 ]
 for text,_ in algos_group4:
     listbox4.insert(tk.END, text)
