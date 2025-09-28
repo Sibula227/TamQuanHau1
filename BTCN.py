@@ -732,6 +732,59 @@ def ga_step(offsetX):
     if ga_running:
         root.after(200, lambda: ga_step(offsetX))
 
+
+# ===================== AND - OR SEARCH =====================
+andor_running = False
+andor_queue = deque()
+
+def expand_andor(state):
+    """Sinh các trạng thái con từ state
+    (OR-node)"""
+    used_rows = {r for (r,_) in state}
+    next_row = next((r for r in range(8) if r not in used_rows), None)
+    if next_row is None:
+        return []
+    
+    children = []
+    for col in range(8):
+        if is_safe_state(state, next_row, col):
+            children.append(state + [(next_row, col)])
+    return children
+
+def andor_step(offsetX):
+    global andor_running, andor_queue
+    if not andor_running:
+        return
+    if not andor_queue:
+        print("AND-OR: Hết trạng thái, không tìm ra lời giải")
+        andor_running = False
+        return
+
+    node_type, state = andor_queue.popleft()
+
+    canvas.delete("queens_right")
+    for (r, c) in state:
+        ve_queen(c, r, offsetX, tag ="queens_right")
+    
+    print(f"Đang xét: {node_type}-node | state = {state}")
+
+    if len(state) == 8:
+        print("AND-OR: Tìm thấy lời giải! ", state)
+        andor_running = False
+        return
+    
+    children = expand_andor(state)
+    print(f"Sinh được {len(children)} trạng thái con")
+
+    if node_type == "OR":
+        for child in children:
+            andor_queue.append(("AND", child))
+    elif node_type == "AND":
+        for child in children:
+            andor_queue.append(("OR", child))
+    if andor_running:
+        root.after(200, lambda: andor_step(offsetX))
+
 # ===================== HÀM ĐIỀU KHIỂN =====================
 def start_game():
     global start_state, queue, running, ucs_frontier, ucs_running
@@ -906,9 +959,21 @@ def run_ga():
     print("GA bắt đầu với quần thể kích thước:", POP_SIZE)
     ga_step(580)
 
+def run_andor():
+    global andor_running, andor_queue
+    if not start_state:
+        print("Chưa có trạng thái bắt đầu, nhân start")
+        return
+    andor_queue.clear()
+    andor_queue.append(("OR", start_state))
+    andor_running = True
+    print("AND-OR Search bắt đầu ", start_state)
+    andor_step(580)
+
 def stop_game():
     global running, ucs_running, dfs_running, greedy_running
     global sa_running, beam_running, hc_running, ga_running
+    global andor_running
 
     running = False
     ucs_running = False
@@ -918,12 +983,12 @@ def stop_game():
     beam_running = False
     hc_running = False
     ga_running = False
-
+    andor_running = False
     
 def continue_game():
     global running, ucs_running, dls_running, ids_running
     global hc_running, sa_running, greedy_running, astar_running
-    global ga_running
+    global ga_running, andor_running
     if not running and queue:
         running = True
         bfs_step(580)
@@ -954,6 +1019,9 @@ def continue_game():
     if not ga_running:
         ga_running = True
         ga_step(580)
+    if not andor_running:
+        andor_running = True
+        andor_step(580)
 
 # ===================== GIAO DIỆN NÚT BẤM =====================
 # ===== Frame chứa thuật toán (trái) =====
@@ -995,6 +1063,18 @@ algos_group3 = [
 for text, _ in algos_group3:
     listbox3.insert(tk.END, text)
 
+# ==== Nhóm 4 ====
+listbox4 = tk.Listbox(algo_frame, height=6, width=20)
+listbox4.grid(row=0, column=3, padx=10, pady=5)
+
+algos_group4 = [
+    ("Run AND-OR search", run_andor)
+]
+for text,_ in algos_group4:
+    listbox4.insert(tk.END, text)
+
+listbox4.bind("<Double-Button-1>", lambda e: on_listbox_select(e, algos_group4))
+
 # Hàm xử lý double click
 def on_listbox_select(event, actions):
     selection = event.widget.curselection()
@@ -1013,7 +1093,7 @@ lbl_hint.grid(row=1, column=0, columnspan=3, pady=5)
 
 # ===== Frame chứa 4 nút cố định (phải) =====
 control_frame = tk.Frame(frame)
-control_frame.grid(row=0, column=1, padx=650, pady=(0, 1000), sticky="n")  
+control_frame.grid(row=0, column=1, padx=550, pady=(0, 1000), sticky="n")  
 
 btn_Start = tk.Button(control_frame, text="Start", width=15, command=start_game)
 btn_Start.pack(pady=5)
