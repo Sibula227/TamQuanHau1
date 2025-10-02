@@ -833,6 +833,132 @@ def belief_step(offsetX):
     if belief_running:
         root.after(300, lambda: belief_step(offsetX))
 
+#=============== No observation ======================
+no_obs_running = False
+no_obs_belief = []
+
+def no_obs_step(offsetX):
+    global no_obs_running, no_obs_belief
+    if not no_obs_running:
+        return
+    if not no_obs_belief:
+        print("Không còn trạng thái nào trong belief!")
+        no_obs_running = False
+        return
+
+    state = no_obs_belief.pop(0)  # lấy 1 trạng thái bất kỳ trong belief
+
+    # Vẽ trạng thái hiện tại bên phải
+    canvas.delete("queens_right")
+    for (r, c) in state:
+        ve_queen(c, r, offsetX, tag="queens_right")
+
+    if len(state) == 8:
+        print("Đã tìm thấy lời giải bằng Searching with No Observation!")
+        no_obs_running = False
+        return
+
+    # Xác định hàng tiếp theo (chưa được dùng)
+    used_rows = {r for (r, _) in state}
+    next_row = next((r for r in range(8) if r not in used_rows), None)
+    if next_row is None:
+        root.after(500, lambda: no_obs_step(offsetX))
+        return
+
+    # Sinh trạng thái mới cho belief
+    for col in range(8):
+        if is_safe_state(state, next_row, col):
+            no_obs_belief.append(state + [(next_row, col)])
+
+    if no_obs_running:
+        root.after(300, lambda: no_obs_step(offsetX))
+
+
+# =================Backtracking =========================
+bt_running = True
+bt_solution = []
+bt_found = False
+
+def backtracking_step(row, state, offsetX):
+    global bt_running, bt_solution, bt_found
+    if not bt_running or bt_found:
+        return
+    
+    if row == 8:
+        print("Backtracking đã tìm thấy lời giải!!")
+        bt_solution = state.copy()
+        bt_found = True
+        bt_running = False
+
+        canvas.delete("queens_right")
+        for (r, c) in bt_solution:
+            ve_queen(c, r, offsetX, tag="queens_right")
+        return
+    
+    for col in range(8):
+        if is_safe_state(state,row,col):
+            new_state = state + [(row, col)]
+
+            canvas.delete("queens_right")
+            for (r, c) in new_state:
+                ve_queen(c, r, offsetX, tag = "queens_right")
+            
+            root.after(300, lambda r = row + 1, s = new_state: backtracking_step(r, s, offsetX))
+    
+    return
+
+
+# ==================== Forward Checking ====================
+fc_running = False
+fc_solution = []
+fc_found = False
+
+def init_domains():
+
+    return {r: list(range(8)) for r in range (8)}
+
+def forward_checking_step(row, state, domains, offsetX):
+    global fc_running, fc_solution, fc_found
+    if not fc_running and fc_found:
+        return
+    
+    if len(state) == 8:
+        print("Forward Checking đã tìm thấy lời giải")
+        fc_solution = state.copy()
+        fc_found = True
+        fc_running = False
+
+        canvas.delete("queens_right")
+        for (r, c) in fc_solution:
+            ve_queen(r, c, offsetX, tag = "queens_right")
+        return
+    
+    for col in domains[row]:
+        if is_safe_state(state, row, col):
+            new_state = state + [(row, col)]
+
+            new_domains = {r: list(cols) for r, cols in domains.items()}
+            for r in range (row+1, 8):
+                if col in new_domains[r]:
+                    new_domains[r].remove(col)
+                diag1 = col + (r - row) # Đường chéo phải
+                diag2 = col - (r - row) # Đường chéo trái
+
+                if diag1 in new_domains[r]:
+                    new_domains[r].remove(diag1)
+                if diag2 in new_domains[r]:
+                    new_domains[r].remove(diag2)
+
+            if any(len(new_domains[r]) == 0 for r in range( row+1, 8)):
+                continue
+
+            canvas.delete("queens_right")
+            for (r, c ) in new_state:
+                ve_queen(c, r, offsetX, tag = "queens_right")
+
+            root.after(300, lambda r = row + 1, s = new_state, d = new_domains: forward_checking_step(r, s, d, offsetX))
+    return
+
 
 # ===================== HÀM ĐIỀU KHIỂN =====================
 def start_game():
@@ -1029,6 +1155,34 @@ def run_belief():
     print("Belief Search bắt đầu với 1 belief state")
     belief_step(580)
 
+def run_backtracking():
+    global bt_running, bt_solution, bt_found
+    bt_solution.clear()
+    bt_found = False
+    bt_running = True
+
+    print("Backtracking bắt đầu!")
+    backtracking_step(0, [], 580)
+
+def run_fc():
+    global fc_running, fc_solution, fc_found
+    
+    fc_solution.clear()
+    fc_found = False
+    fc_running = True
+
+    domains = init_domains()
+
+    print("Forward Checking bắt đầu")
+
+    forward_checking_step(0, [], domains,580)
+
+def run_no_obs():
+    global no_obs_running, no_obs_belief
+    no_obs_belief = [[]]   # khởi đầu không có thông tin, chỉ biết trạng thái rỗng
+    no_obs_running = True
+    no_obs_step(580)
+
 def stop_game():
     global running, ucs_running, dfs_running, greedy_running
     global sa_running, beam_running, hc_running, ga_running
@@ -1132,12 +1286,25 @@ listbox4.grid(row=0, column=3, padx=10, pady=5)
 
 algos_group4 = [
     ("Run AND-OR search", run_andor),
-    ("Run Belief Search", run_belief)
+    ("Run Belief Search", run_belief),
+    ("Run SNO", run_no_obs)
 ]
 for text,_ in algos_group4:
     listbox4.insert(tk.END, text)
 
 listbox4.bind("<Double-Button-1>", lambda e: on_listbox_select(e, algos_group4))
+# ===== Nhóm 5 =======
+listbox5 = tk.Listbox(algo_frame, height=6, width=20)
+listbox5.grid(row=0, column=4, padx=10, pady=5)
+algos_group5 = [
+    ("Run Backtracking", run_backtracking),
+    ("Run Forward Checking", run_fc)
+]
+for text, _ in algos_group5:
+    listbox5.insert(tk.END, text)
+
+listbox5.bind("<Double-Button-1>", lambda e: on_listbox_select(e, algos_group5))
+
 
 # Hàm xử lý double click
 def on_listbox_select(event, actions):
@@ -1157,7 +1324,7 @@ lbl_hint.grid(row=1, column=0, columnspan=3, pady=5)
 
 # ===== Frame chứa 4 nút cố định (phải) =====
 control_frame = tk.Frame(frame)
-control_frame.grid(row=0, column=1, padx=550, pady=(0, 1000), sticky="n")  
+control_frame.grid(row=0, column=1, padx=350, pady=(0, 1000), sticky="n")  
 
 btn_Start = tk.Button(control_frame, text="Start", width=15, command=start_game)
 btn_Start.pack(pady=5)
