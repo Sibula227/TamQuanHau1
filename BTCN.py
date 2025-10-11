@@ -959,6 +959,70 @@ def forward_checking_step(row, state, domains, offsetX):
             root.after(300, lambda r = row + 1, s = new_state, d = new_domains: forward_checking_step(r, s, d, offsetX))
     return
 
+ac3_running = False
+ac3_domains = {}
+ac3_queue = []
+
+def ac3_revise(i, j):
+    global ac3_domains 
+    removed = False
+    di = ac3_domains[i]
+    dj = ac3_domains[j]
+
+    to_remove = []
+    for ci in list(di):
+        satisf = False
+        for cj in dj:
+            if ci != cj and abs(ci - cj) != abs(i - j):
+                satisf = True
+                break
+        if not satisf:
+            to_remove.append(ci)
+    if to_remove:
+        for v in to_remove:
+            if v in ac3_domains[i]:
+                ac3_domains[i].remove(v)
+                removed = True
+    return removed
+
+def ac3_step(offsetX):
+    global ac3_running, ac3_queue, ac3_domains
+    if not ac3_running:
+        return
+    if ac3_queue:
+        for r, d in ac3_domains.items():
+            if not d:
+                print("AC3: Domain rỗng tại hàng", r, "=> Không có nghiệm")
+                ac3_running = False
+                return
+        if all(len(d) == 1 for d in ac3_domains.values()):
+            solution = [(r, ac3_domains[r][0]) for r in range(8)]
+
+            canvas.delete("queens_right")
+            for(r, c) in solution:
+                ve_queen(c, r, offsetX, tag ="queens_right")
+            print("AC: Tìm thấy nghiệm: ", solution)
+            ac3_running = False
+            return
+        else:
+            print("AC3: Lọc hoàn tất nhưng không tạo được nghiệm (domains vẫn > 1)")
+            ac3_running = False
+            return
+    i, j = ac3_queue.pop(0)
+    revised = ac3_revise(i, j)
+
+    if revised:
+        if not ac3_domains[i]:
+            print("AC: Domains rỗng tại hàng," ,i, "=> Thất bại")
+            ac3_running = False
+            return
+        for k in range(8):
+            if k!= i and k != j:
+                ac3_queue.append((k,i))
+    
+    if ac3_running:
+        root.after(200, lambda: ac3_step(offsetX))
+    
 
 # ===================== HÀM ĐIỀU KHIỂN =====================
 def start_game():
@@ -1183,10 +1247,22 @@ def run_no_obs():
     no_obs_running = True
     no_obs_step(580)
 
+def run_ac3(offsetX = 580):
+    global ac3_running, ac3_domains, ac3_queue
+    clear_queens()
+    ve_banco_daydu(40, side = "left")
+    ve_banco_daydu(offsetX, side = "right")
+
+    ac3_domains={r: list(range(8)) for r in range(8)}
+
+    ac3_queue = [(i, j) for i in range(8) for j in range(8) if i != j]
+
+    ac3_running = True
+    ac3_step(offsetX)
 def stop_game():
     global running, ucs_running, dfs_running, greedy_running
     global sa_running, beam_running, hc_running, ga_running
-    global andor_running, belief_running
+    global andor_running, belief_running, bt_running, fc_running, ac3_running
 
     running = False
     ucs_running = False
@@ -1198,11 +1274,17 @@ def stop_game():
     ga_running = False
     andor_running = False
     belief_running = False
+    bt_running = False
+    ac3_running = False
+    fc_running = False
+    
 
 def continue_game():
     global running, ucs_running, dls_running, ids_running
     global hc_running, sa_running, greedy_running, astar_running
     global ga_running, andor_running, belief_running
+    global bt_running, fc_running, ac3_running
+    
     if not running and queue:
         running = True
         bfs_step(580)
@@ -1239,6 +1321,15 @@ def continue_game():
     if not belief_running:
         belief_running = True
         belief_step(580)
+    if not bt_running:
+        bt_running = True
+        backtracking_step(580)
+    if not fc_running:
+        fc_running = True
+        forward_checking_step(580)
+    if not ac3_running:
+        ac3_running = True
+        ac3_step(580)
 
 # ===================== GIAO DIỆN NÚT BẤM =====================
 # ===== Frame chứa thuật toán (trái) =====
@@ -1298,7 +1389,8 @@ listbox5 = tk.Listbox(algo_frame, height=6, width=20)
 listbox5.grid(row=0, column=4, padx=10, pady=5)
 algos_group5 = [
     ("Run Backtracking", run_backtracking),
-    ("Run Forward Checking", run_fc)
+    ("Run Forward Checking", run_fc),
+    ("Run Arc Consistency 3", run_ac3)
 ]
 for text, _ in algos_group5:
     listbox5.insert(tk.END, text)
