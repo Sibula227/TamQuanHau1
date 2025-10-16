@@ -47,21 +47,6 @@ Dự án mô phỏng bài toán **8 quân hậu (8-Queens Problem)** bằng các
 
 ---
 
-## 🎞️ GIF mô phỏng hoạt động (Sẽ thêm sau)
-
-> Mỗi thuật toán sẽ có một GIF minh họa ngay tại đây.
-
-| Thuật toán          | GIF mô phỏng    |
-| ------------------- | --------------- |
-| BFS / DFS           | _Đang cập nhật_ |
-| A\*                 | _Đang cập nhật_ |
-| Simulated Annealing | _Đang cập nhật_ |
-| Hill Climbing       | _Đang cập nhật_ |
-| Genetic Algorithm   | _Đang cập nhật_ |
-| Backtracking        | _Đang cập nhật_ |
-
----
-
 ## 🛠️ Cách sử dụng chương trình
 
 1. Nhấn **Start** để tạo trạng thái ngẫu nhiên.
